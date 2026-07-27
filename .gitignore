@@ -11,3 +11,4 @@ venv/
 # Copies texte générées à la demande (doublons des sources)
 ExcelToolbox_source.txt
 ExcelToolbox_spyder_CODE.txt
+CREER_LE_EXE_CODE.txt
