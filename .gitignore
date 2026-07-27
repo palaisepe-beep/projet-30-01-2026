@@ -7,3 +7,6 @@ dist/
 venv/
 .venv/
 *.egg-info/
+
+# Bundle texte du code source généré à la demande (doublon des sources)
+ExcelToolbox_source.txt
