@@ -8,5 +8,6 @@ venv/
 .venv/
 *.egg-info/
 
-# Bundle texte du code source généré à la demande (doublon des sources)
+# Copies texte générées à la demande (doublons des sources)
 ExcelToolbox_source.txt
+ExcelToolbox_spyder_CODE.txt
