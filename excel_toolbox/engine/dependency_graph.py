@@ -66,6 +66,27 @@ def external_targets(xlsx_path: Path) -> set[Path]:
     return targets
 
 
+def has_external_links(xlsx_path: Path) -> bool | None:
+    """Whether this workbook references any other workbook at all.
+
+    Returns True/False when it can be determined, or None when the file could
+    not be read -- callers must treat None as "don't know, process it anyway"
+    so a file is never skipped just because openpyxl failed to parse it.
+    """
+    try:
+        wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=False)
+    except Exception:
+        return None
+    try:
+        for link in getattr(wb, "_external_links", []):
+            rel = getattr(link, "file_link", None)
+            if rel is not None and getattr(rel, "Target", None):
+                return True
+        return False
+    finally:
+        wb.close()
+
+
 def build_graph(files: list[Path]) -> dict[Path, set[Path]]:
     """Return {file: {other files in `files` that it depends on}}."""
     files_set = set(files)

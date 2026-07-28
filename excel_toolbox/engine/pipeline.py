@@ -14,9 +14,17 @@ from typing import Callable, Iterable, Literal
 
 from .backup import backup_file
 from .com_session import ExcelSession, ExcelUnavailableError
-from .dependency_graph import build_graph, discover_files, topological_order
+from .dependency_graph import (
+    build_graph,
+    discover_files,
+    has_external_links,
+    topological_order,
+)
 
-EventKind = Literal["plan", "start_file", "file_done", "file_error", "cycle_warning", "finished"]
+EventKind = Literal[
+    "plan", "start_file", "file_done", "file_error", "file_skip",
+    "cycle_warning", "finished",
+]
 
 
 @dataclass
@@ -47,6 +55,23 @@ def run_batch(
     on_event: Callable[[Event], None],
 ) -> None:
     ordered, cycles = plan_batch(paths)
+
+    if cycles:
+        ordered = ordered + cycles
+
+    # In refresh mode, a file with no external links has nothing to update, so
+    # opening and re-saving it is wasted time. Skip those up front. Files we
+    # can't read (has_external_links -> None) are kept, never skipped.
+    skipped: list[Path] = []
+    if action == "refresh_links":
+        kept: list[Path] = []
+        for f in ordered:
+            if has_external_links(f) is False:
+                skipped.append(f)
+            else:
+                kept.append(f)
+        ordered = kept
+
     total = len(ordered)
     on_event(Event(kind="plan", total=total, message=f"{total} fichier(s) à traiter"))
 
@@ -56,7 +81,10 @@ def run_batch(
             kind="cycle_warning",
             message=f"Référence circulaire détectée entre : {names} (ordre non garanti pour ces fichiers)",
         ))
-        ordered = ordered + cycles
+
+    for f in skipped:
+        on_event(Event(kind="file_skip", file=f,
+                       message="aucune liaison externe"))
 
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
 

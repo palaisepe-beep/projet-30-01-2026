@@ -217,6 +217,8 @@ class App(CTkDnD):
         elif event.kind == "file_error":
             self.progress.set(event.index / event.total if event.total else 0)
             self._log(f"✗ {event.file.name} — {event.message}")
+        elif event.kind == "file_skip":
+            self._log(f"– {event.file.name} (ignoré : {event.message})")
         elif event.kind == "cycle_warning":
             self._log(f"⚠ {event.message}")
         elif event.kind == "finished":

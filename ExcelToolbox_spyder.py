@@ -112,6 +112,26 @@ def external_targets(xlsx_path):
     return targets
 
 
+def has_external_links(xlsx_path):
+    """True/False si on a pu determiner, None si le fichier est illisible.
+    None doit etre traite comme "on ne sait pas -> on traite quand meme", pour
+    ne jamais ignorer un fichier juste parce qu'openpyxl a echoue a le lire."""
+    if openpyxl is None:
+        return None
+    try:
+        wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=False)
+    except Exception:
+        return None
+    try:
+        for link in getattr(wb, "_external_links", []):
+            rel = getattr(link, "file_link", None)
+            if rel is not None and getattr(rel, "Target", None):
+                return True
+        return False
+    finally:
+        wb.close()
+
+
 def build_graph(files):
     files_set = set(files)
     return {f: {d for d in external_targets(f) if d in files_set} for f in files}
@@ -237,7 +257,14 @@ class ExcelSession:
             IgnoreReadOnlyRecommended=True, Notify=False,
         )
         try:
-            self.app.CalculateFullRebuild()
+            # CalculateFull recalcule toutes les formules avec les valeurs de
+            # liaisons fraiches, mais SANS reconstruire l'arbre des dependances
+            # (ce que fait CalculateFullRebuild). Comme on ne modifie pas les
+            # formules, c'est aussi correct et beaucoup plus rapide.
+            try:
+                self.app.CalculateFull()
+            except Exception:
+                self.app.Calculate()
             try:
                 self.app.CalculateUntilAsyncQueriesDone()
             except Exception:
@@ -279,15 +306,31 @@ def run_batch(paths, action, backup_root, on_event):
     files = discover_files(paths)
     graph = build_graph(files)
     ordered, cycles = topological_order(graph)
-    total = len(ordered)
-    on_event({"kind": "plan", "total": total,
-              "message": f"{total} fichier(s) à traiter"})
 
     if cycles:
         names = ", ".join(p.name for p in cycles)
         on_event({"kind": "log",
                   "message": f"Reference circulaire : {names} (ordre non garanti)"})
         ordered = ordered + cycles
+
+    # En mode actualisation, un fichier sans aucune liaison externe n'a rien a
+    # mettre a jour : inutile de l'ouvrir et de le re-sauvegarder. On saute ces
+    # fichiers. Ceux qu'on ne peut pas lire (None) sont conserves, jamais sautes.
+    skipped = []
+    if action == "refresh_links":
+        kept = []
+        for f in ordered:
+            if has_external_links(f) is False:
+                skipped.append(f)
+            else:
+                kept.append(f)
+        ordered = kept
+
+    total = len(ordered)
+    on_event({"kind": "plan", "total": total,
+              "message": f"{total} fichier(s) à traiter"})
+    for f in skipped:
+        on_event({"kind": "log", "message": f"ignore (aucune liaison) : {f.name}"})
 
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
 

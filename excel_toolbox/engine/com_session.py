@@ -107,10 +107,18 @@ class ExcelSession:
             Notify=False,
         )
         try:
-            self.app.CalculateFullRebuild()
+            # CalculateFull recomputes every formula with the freshly updated
+            # link values, but WITHOUT rebuilding the dependency tree from
+            # scratch (which CalculateFullRebuild does). Since we only refresh
+            # values and never edit formulas, the tree is unchanged -- this is
+            # both correct and far faster.
+            self.app.CalculateFull()
+        except Exception:
+            self.app.Calculate()
+        try:
             self.app.CalculateUntilAsyncQueriesDone()
         except Exception:
-            pass  # CalculateUntilAsyncQueriesDone isn't on every Excel version
+            pass  # not available on every Excel version
         try:
             wb.Save()
         finally:

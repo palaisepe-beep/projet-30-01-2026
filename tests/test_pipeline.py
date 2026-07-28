@@ -42,12 +42,16 @@ class FakeExcelSession:
 
 @pytest.fixture
 def chain_dir(tmp_path: Path) -> Path:
+    """A.xlsx -> B.xlsx -> C.xlsx. C also links to a file outside the selection
+    so that, in refresh mode, all three still have external links and none is
+    skipped -- this lets the ordering test cover all three files."""
     a, b, c = tmp_path / "A.xlsx", tmp_path / "B.xlsx", tmp_path / "C.xlsx"
     _make_workbook(a)
     _make_workbook(b)
     _make_workbook(c)
     _add_external_link(a, "B.xlsx")
     _add_external_link(b, "C.xlsx")
+    _add_external_link(c, "Outside.xlsx")  # target not in the selection
     return tmp_path
 
 
@@ -86,3 +90,52 @@ def test_run_batch_continues_after_one_file_fails(monkeypatch, chain_dir, tmp_pa
 
     done_names = {e.file.name for e in events if e.kind == "file_done"}
     assert done_names == {"A.xlsx", "C.xlsx"}
+
+
+def test_run_batch_skips_files_without_external_links(monkeypatch, tmp_path):
+    """A file with no external links has nothing to refresh and should be
+    skipped (not opened) in refresh mode -- this is the speed optimization."""
+    linked = tmp_path / "Linked.xlsx"
+    plain = tmp_path / "Plain.xlsx"
+    _make_workbook(linked)
+    _make_workbook(plain)
+    _add_external_link(linked, "Somewhere.xlsx")  # only Linked has a link
+
+    fake = FakeExcelSession()
+    monkeypatch.setattr(pipeline, "ExcelSession", lambda *a, **k: fake)
+
+    events = []
+    pipeline.run_batch(
+        [tmp_path], "refresh_links", tmp_path / ".backup", events.append
+    )
+
+    processed = {path.name for _, path in fake.calls}
+    assert processed == {"Linked.xlsx"}
+
+    skipped = {e.file.name for e in events if e.kind == "file_skip"}
+    assert skipped == {"Plain.xlsx"}
+
+    # A skipped file is never opened, so it is never backed up either.
+    backups = {p.name for p in (tmp_path / ".backup").rglob("*.xlsx")}
+    assert backups == {"Linked.xlsx"}
+
+
+def test_run_batch_flatten_processes_every_file(monkeypatch, tmp_path):
+    """The skip optimization must NOT apply to the independent-copy action:
+    every selected file must be exported, even ones without external links."""
+    linked = tmp_path / "Linked.xlsx"
+    plain = tmp_path / "Plain.xlsx"
+    _make_workbook(linked)
+    _make_workbook(plain)
+    _add_external_link(linked, "Somewhere.xlsx")
+
+    fake = FakeExcelSession()
+    monkeypatch.setattr(pipeline, "ExcelSession", lambda *a, **k: fake)
+
+    events = []
+    pipeline.run_batch(
+        [tmp_path], "flatten_to_values", tmp_path / ".backup", events.append
+    )
+
+    done = {e.file.name for e in events if e.kind == "file_done"}
+    assert done == {"Linked.xlsx", "Plain.xlsx"}
