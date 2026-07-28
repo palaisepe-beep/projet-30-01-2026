@@ -546,7 +546,7 @@ class App(tk.Tk):
         self.log_box = tk.Text(
             log_frame, height=8, yscrollcommand=log_scroll.set,
             font=("Consolas", 9), bd=1, relief="solid", state="disabled",
-            wrap="none", highlightthickness=0,
+            wrap="word", highlightthickness=0,  # messages longs visibles en entier
         )
         log_scroll.config(command=self.log_box.yview)
         log_scroll.pack(side="right", fill="y")

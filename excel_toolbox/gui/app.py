@@ -136,7 +136,7 @@ class App(CTkDnD):
         self.status_label = ctk.CTkLabel(self, text="", font=ctk.CTkFont(size=12))
         self.status_label.grid(row=8, column=0, padx=24, pady=(0, 8), sticky="w")
 
-        self.log_box = ctk.CTkTextbox(self, wrap="none")
+        self.log_box = ctk.CTkTextbox(self, wrap="word")
         self.log_box.grid(row=9, column=0, padx=24, pady=(0, 20), sticky="nsew")
         self.grid_rowconfigure(9, weight=1)
         self.log_box.configure(state="disabled")
