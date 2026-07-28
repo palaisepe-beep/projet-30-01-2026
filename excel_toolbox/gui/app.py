@@ -116,16 +116,23 @@ class App(CTkDnD):
         )
         self.flatten_button.pack(side="left")
 
+        self.backup_var = ctk.BooleanVar(value=True)
+        self.backup_check = ctk.CTkCheckBox(
+            self, text="Sauvegarde de sécurité avant modification (plus sûr, un peu plus lent)",
+            variable=self.backup_var, font=ctk.CTkFont(size=12),
+        )
+        self.backup_check.grid(row=6, column=0, padx=24, pady=(0, 8), sticky="w")
+
         self.progress = ctk.CTkProgressBar(self)
         self.progress.set(0)
-        self.progress.grid(row=6, column=0, padx=24, pady=(8, 4), sticky="ew")
+        self.progress.grid(row=7, column=0, padx=24, pady=(8, 4), sticky="ew")
 
         self.status_label = ctk.CTkLabel(self, text="", font=ctk.CTkFont(size=12))
-        self.status_label.grid(row=7, column=0, padx=24, pady=(0, 8), sticky="w")
+        self.status_label.grid(row=8, column=0, padx=24, pady=(0, 8), sticky="w")
 
         self.log_box = ctk.CTkTextbox(self, wrap="none")
-        self.log_box.grid(row=8, column=0, padx=24, pady=(0, 20), sticky="nsew")
-        self.grid_rowconfigure(8, weight=1)
+        self.log_box.grid(row=9, column=0, padx=24, pady=(0, 20), sticky="nsew")
+        self.grid_rowconfigure(9, weight=1)
         self.log_box.configure(state="disabled")
 
     # ------------------------------------------------------------ selection
@@ -178,9 +185,11 @@ class App(CTkDnD):
         self._clear_log()
         backup_root = self._common_parent(self.selected_paths) / BACKUP_FOLDER_NAME
 
+        make_backup = bool(self.backup_var.get())
         self._worker = threading.Thread(
             target=run_batch,
             args=(self.selected_paths, action, backup_root, self._event_queue.put),
+            kwargs={"make_backup": make_backup},
             daemon=True,
         )
         self._worker.start()

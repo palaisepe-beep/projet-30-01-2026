@@ -320,7 +320,7 @@ class ExcelSession:
 #  ORCHESTRATION : scan -> ordre -> backup -> action
 # ============================================================================
 
-def run_batch(paths, action, backup_root, on_event):
+def run_batch(paths, action, backup_root, on_event, make_backup=True):
     """Traite tout le lot. on_event(dict) est appelé pour chaque étape afin
     que l'interface reste réactive."""
     files = discover_files(paths)
@@ -360,7 +360,8 @@ def run_batch(paths, action, backup_root, on_event):
                 on_event({"kind": "start", "file": file,
                           "index": index, "total": total})
                 try:
-                    backup_file(file, backup_root, run_timestamp)
+                    if make_backup:
+                        backup_file(file, backup_root, run_timestamp)
                     if action == "refresh_links":
                         excel.refresh_links(file)
                     else:
@@ -473,6 +474,13 @@ class App(tk.Tk):
         )
         self.flatten_button.pack(side="left", padx=8)
 
+        # Option : sauvegarde de sécurité
+        self.backup_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            self, variable=self.backup_var,
+            text="Sauvegarde de securite avant modification (plus sur, un peu plus lent)",
+        ).pack(anchor="w", **pad)
+
         # Progression
         self.progress = ttk.Progressbar(self, mode="determinate", maximum=100)
         self.progress.pack(fill="x", pady=(4, 2), **pad)
@@ -540,10 +548,12 @@ class App(tk.Tk):
         self._set_running(True)
         self._clear_log()
         backup_root = self._common_parent(self.selected_paths) / BACKUP_FOLDER_NAME
+        make_backup = bool(self.backup_var.get())
         self._worker = threading.Thread(
             target=run_batch,
             args=(list(self.selected_paths), action, backup_root,
                   self._event_queue.put),
+            kwargs={"make_backup": make_backup},
             daemon=True,
         )
         self._worker.start()

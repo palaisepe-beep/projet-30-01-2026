@@ -120,6 +120,22 @@ def test_run_batch_skips_files_without_external_links(monkeypatch, tmp_path):
     assert backups == {"Linked.xlsx"}
 
 
+def test_run_batch_make_backup_false_skips_backup(monkeypatch, chain_dir, tmp_path):
+    fake = FakeExcelSession()
+    monkeypatch.setattr(pipeline, "ExcelSession", lambda *a, **k: fake)
+
+    events = []
+    pipeline.run_batch(
+        [chain_dir], "refresh_links", tmp_path / ".backup", events.append,
+        make_backup=False,
+    )
+
+    # Files are still processed...
+    assert {path.name for _, path in fake.calls} == {"A.xlsx", "B.xlsx", "C.xlsx"}
+    # ...but no backup folder is created.
+    assert not (tmp_path / ".backup").exists()
+
+
 def test_run_batch_flatten_processes_every_file(monkeypatch, tmp_path):
     """The skip optimization must NOT apply to the independent-copy action:
     every selected file must be exported, even ones without external links."""

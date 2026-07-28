@@ -53,6 +53,7 @@ def run_batch(
     action: Action,
     backup_root: Path,
     on_event: Callable[[Event], None],
+    make_backup: bool = True,
 ) -> None:
     ordered, cycles = plan_batch(paths)
 
@@ -93,7 +94,8 @@ def run_batch(
             for index, file in enumerate(ordered, start=1):
                 on_event(Event(kind="start_file", file=file, index=index, total=total))
                 try:
-                    backup_file(file, backup_root, run_timestamp)
+                    if make_backup:
+                        backup_file(file, backup_root, run_timestamp)
                     if action == "refresh_links":
                         excel.refresh_links(file)
                     elif action == "flatten_to_values":
