@@ -1,0 +1,97 @@
+========================================================================
+                    EXCEL TOOLBOX  -  MODE D'EMPLOI
+========================================================================
+
+Un outil pour actualiser des fichiers Excel liés entre eux, créer des
+copies sans liaisons, et déprotéger des feuilles. Simple : on glisse des
+fichiers, on clique sur un bouton.
+
+
+------------------------------------------------------------------------
+  CE DONT VOUS AVEZ BESOIN
+------------------------------------------------------------------------
+
+  - Windows
+  - Microsoft Excel installé sur le poste
+  - RIEN D'AUTRE à installer (pas de Python, pas de logiciel technique)
+
+
+------------------------------------------------------------------------
+  DÉMARRER L'OUTIL
+------------------------------------------------------------------------
+
+  1. Copiez le fichier "ExcelToolbox.exe" où vous voulez
+     (Bureau, un dossier, etc.).
+
+  2. Double-cliquez dessus.
+
+  * Si Windows affiche un écran bleu "Windows a protégé votre
+    ordinateur" :
+        -> cliquez sur "Informations complémentaires"
+        -> puis sur "Exécuter quand même".
+    (C'est normal pour un outil interne. Si le bouton n'apparaît pas,
+     c'est que l'antivirus de l'entreprise le bloque : contactez alors
+     le service informatique ou la personne qui vous a fourni l'outil.)
+
+
+------------------------------------------------------------------------
+  UTILISER L'OUTIL (3 étapes)
+------------------------------------------------------------------------
+
+  ÉTAPE 1 - Choisir les fichiers
+     Glissez-déposez vos fichiers Excel (ou un dossier entier) dans la
+     fenêtre. Ou utilisez les boutons "Choisir des fichiers..." /
+     "Choisir un dossier...".
+
+  ÉTAPE 2 - Choisir l'action (un des trois boutons)
+
+     > "Actualiser les liaisons"
+       Met à jour les fichiers en allant chercher les dernières valeurs
+       dans les autres fichiers liés. L'outil détecte tout seul le bon
+       ordre de mise à jour. Les fichiers d'origine sont modifiés.
+
+     > "Créer des versions indépendantes"
+       Crée, à côté de chaque fichier, une copie "NomDuFichier_
+       independant.xlsx" où les formules et liaisons sont remplacées par
+       leurs valeurs. Ces copies n'ont plus besoin des autres fichiers.
+       Les fichiers d'origine ne sont PAS modifiés.
+
+     > "Déprotéger des feuilles"
+       Retire la protection des feuilles. L'outil vous demande le mot de
+       passe (il faut le connaître : l'outil ne le devine pas).
+
+  ÉTAPE 3 - Suivre la progression
+     La barre de progression avance et le journal en bas affiche, pour
+     chaque fichier : "OK" (réussi) ou un message si quelque chose a
+     coincé.
+
+
+------------------------------------------------------------------------
+  SÉCURITÉ DE VOS FICHIERS
+------------------------------------------------------------------------
+
+  La case "Sauvegarde de sécurité avant modification" (cochée par
+  défaut) fait une copie de secours de chaque fichier AVANT de le
+  modifier. Les copies sont rangées dans un dossier ".backup_excel_
+  toolbox" créé à côté de vos fichiers.
+
+  Conseil : laissez cette case cochée. En cas de fausse manip, vos
+  fichiers d'origine sont récupérables.
+
+  Astuce : pour un premier essai, testez sur des COPIES de vos fichiers,
+  pas sur les originaux.
+
+
+------------------------------------------------------------------------
+  EN CAS DE PROBLÈME
+------------------------------------------------------------------------
+
+  - "Excel n'est pas installé" : l'outil a besoin d'Excel sur le poste.
+  - Un fichier affiche un message au lieu de "OK" : le journal indique
+    la raison (ex. mot de passe incorrect, fichier ouvert ailleurs).
+  - L'outil est bloqué par l'antivirus : contactez le service
+    informatique.
+
+  Pour toute question : contactez la personne qui vous a fourni l'outil.
+
+========================================================================
