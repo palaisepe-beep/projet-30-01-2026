@@ -53,6 +53,7 @@ class ExcelSession:
             )
         self._visible = visible
         self.app = None
+        self._keepalive = None
 
     def __enter__(self) -> "ExcelSession":
         pythoncom.CoInitialize()
@@ -69,16 +70,30 @@ class ExcelSession:
         self.app.AskToUpdateLinks = False
         self.app.EnableEvents = False
         self.app.ScreenUpdating = False
-        self.app.Calculation = XL_CALCULATION_MANUAL
+        # Excel refuses to set Application.Calculation while no workbook is
+        # open ("Impossible de définir la propriété Calculation"). Keep one
+        # blank workbook open for the whole session so manual calc is valid
+        # throughout -- this also stops each real file from auto-recalculating
+        # on open, which is what we want (we recalc explicitly instead).
+        self._keepalive = self.app.Workbooks.Add()
+        try:
+            self.app.Calculation = XL_CALCULATION_MANUAL
+        except Exception:
+            pass
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         try:
             if self.app is not None:
-                self.app.Calculation = XL_CALCULATION_AUTOMATIC
+                try:
+                    if self._keepalive is not None:
+                        self._keepalive.Close(SaveChanges=False)
+                except Exception:
+                    pass
                 self.app.Quit()
         finally:
             self.app = None
+            self._keepalive = None
             pythoncom.CoUninitialize()
 
     def refresh_links(self, path: Path) -> None:

@@ -177,6 +177,7 @@ class ExcelSession:
     def __init__(self, visible=False):
         self._visible = visible
         self.app = None
+        self._keepalive = None
         try:
             import pythoncom  # noqa: F401
             import win32com.client  # noqa: F401
@@ -203,17 +204,31 @@ class ExcelSession:
         self.app.AskToUpdateLinks = False
         self.app.EnableEvents = False
         self.app.ScreenUpdating = False
-        self.app.Calculation = XL_CALCULATION_MANUAL
+        # Excel refuse de régler Application.Calculation tant qu'aucun classeur
+        # n'est ouvert ("Impossible de définir la propriété Calculation"). On
+        # garde donc un classeur vide ouvert pendant toute la session : le mode
+        # manuel reste valable, et les vrais fichiers ne se recalculent pas tout
+        # seuls à l'ouverture (on recalcule nous-mêmes, au bon moment).
+        self._keepalive = self.app.Workbooks.Add()
+        try:
+            self.app.Calculation = XL_CALCULATION_MANUAL
+        except Exception:
+            pass
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         import pythoncom
         try:
             if self.app is not None:
-                self.app.Calculation = XL_CALCULATION_AUTOMATIC
+                try:
+                    if self._keepalive is not None:
+                        self._keepalive.Close(SaveChanges=False)
+                except Exception:
+                    pass
                 self.app.Quit()
         finally:
             self.app = None
+            self._keepalive = None
             pythoncom.CoUninitialize()
 
     def refresh_links(self, path):
