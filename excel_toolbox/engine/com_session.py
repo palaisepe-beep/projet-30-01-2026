@@ -111,19 +111,24 @@ class ExcelSession:
             Notify=False,
         )
         try:
+            if wb.ReadOnly:
+                raise RuntimeError(
+                    "fichier en lecture seule ou déjà ouvert dans Excel "
+                    "(ferme-le puis réessaie)"
+                )
             # CalculateFull recomputes every formula with the freshly updated
             # link values, but WITHOUT rebuilding the dependency tree from
             # scratch (which CalculateFullRebuild does). Since we only refresh
             # values and never edit formulas, the tree is unchanged -- this is
             # both correct and far faster.
-            self.app.CalculateFull()
-        except Exception:
-            self.app.Calculate()
-        try:
-            self.app.CalculateUntilAsyncQueriesDone()
-        except Exception:
-            pass  # not available on every Excel version
-        try:
+            try:
+                self.app.CalculateFull()
+            except Exception:
+                self.app.Calculate()
+            try:
+                self.app.CalculateUntilAsyncQueriesDone()
+            except Exception:
+                pass  # not available on every Excel version
             wb.Save()
         finally:
             self._safe_close(wb)
@@ -199,6 +204,11 @@ class ExcelSession:
         failures: list[str] = []
         unprotected = 0
         try:
+            if wb.ReadOnly:
+                raise RuntimeError(
+                    "fichier en lecture seule ou déjà ouvert dans Excel "
+                    "(ferme-le puis réessaie)"
+                )
             for sheet in wb.Sheets:
                 try:
                     if not sheet.ProtectContents:

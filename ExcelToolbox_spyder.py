@@ -259,6 +259,11 @@ class ExcelSession:
             IgnoreReadOnlyRecommended=True, Notify=False,
         )
         try:
+            if wb.ReadOnly:
+                raise RuntimeError(
+                    "fichier en lecture seule ou deja ouvert dans Excel "
+                    "(ferme-le puis reessaie)"
+                )
             # CalculateFull recalcule toutes les formules avec les valeurs de
             # liaisons fraiches, mais SANS reconstruire l'arbre des dependances
             # (ce que fait CalculateFullRebuild). Comme on ne modifie pas les
@@ -330,6 +335,11 @@ class ExcelSession:
         failures = []
         unprotected = 0
         try:
+            if wb.ReadOnly:
+                raise RuntimeError(
+                    "fichier en lecture seule ou deja ouvert dans Excel "
+                    "(ferme-le puis reessaie)"
+                )
             for sheet in wb.Sheets:
                 try:
                     if not sheet.ProtectContents:
