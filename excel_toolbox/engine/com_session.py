@@ -58,7 +58,11 @@ class ExcelSession:
     def __enter__(self) -> "ExcelSession":
         pythoncom.CoInitialize()
         try:
-            self.app = win32.Dispatch("Excel.Application")
+            # DispatchEx forces a brand-new, dedicated Excel instance instead of
+            # attaching to one the user already has open. That keeps our
+            # automation (manual calc, DisplayAlerts off, Quit at the end)
+            # isolated from the user's own Excel windows and files.
+            self.app = win32.DispatchEx("Excel.Application")
         except Exception as exc:
             pythoncom.CoUninitialize()
             raise ExcelUnavailableError(
@@ -122,7 +126,28 @@ class ExcelSession:
         try:
             wb.Save()
         finally:
-            wb.Close(SaveChanges=True)
+            self._safe_close(wb)
+
+    @staticmethod
+    def _safe_close(wb) -> None:
+        """Close a workbook without letting a cleanup hiccup abort the batch.
+
+        Marking the workbook as already-saved stops Excel from trying to pop a
+        save prompt on close -- a prompt it can't actually show (alerts are
+        disabled), which surfaces as "La méthode Close de la classe Workbook a
+        échoué". The real save already happened via Save()/SaveAs() before this,
+        so there is nothing to lose by forcing the close.
+        """
+        try:
+            wb.Saved = True
+        except Exception:
+            pass
+        for _ in range(2):
+            try:
+                wb.Close(SaveChanges=False)
+                return
+            except Exception:
+                pass
 
     def flatten_to_values(self, src_path: Path, dst_path: Path) -> None:
         """Open a workbook and save a copy where every formula (including
@@ -152,4 +177,4 @@ class ExcelSession:
 
             wb.SaveAs(str(dst_path))
         finally:
-            wb.Close(SaveChanges=False)
+            self._safe_close(wb)

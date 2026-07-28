@@ -213,7 +213,9 @@ class ExcelSession:
         import win32com.client as win32
         pythoncom.CoInitialize()
         try:
-            self.app = win32.Dispatch("Excel.Application")
+            # DispatchEx force une instance Excel dediee et isolee, au lieu de
+            # se brancher sur un Excel deja ouvert par l'utilisateur.
+            self.app = win32.DispatchEx("Excel.Application")
         except Exception as exc:
             pythoncom.CoUninitialize()
             raise ExcelUnavailableError(
@@ -271,7 +273,25 @@ class ExcelSession:
                 pass
             wb.Save()
         finally:
-            wb.Close(SaveChanges=True)
+            self._safe_close(wb)
+
+    @staticmethod
+    def _safe_close(wb):
+        """Ferme un classeur sans qu'un accroc de fermeture fasse echouer tout
+        le lot. Marquer le classeur comme "deja enregistre" empeche Excel de
+        vouloir afficher une boite de dialogue (qu'il ne peut pas montrer, les
+        alertes etant coupees) -> c'est la cause du "La methode Close ... a
+        echoue". L'enregistrement a deja eu lieu avant, rien n'est perdu."""
+        try:
+            wb.Saved = True
+        except Exception:
+            pass
+        for _ in range(2):
+            try:
+                wb.Close(SaveChanges=False)
+                return
+            except Exception:
+                pass
 
     def flatten_to_values(self, src_path, dst_path):
         wb = self.app.Workbooks.Open(
@@ -293,7 +313,7 @@ class ExcelSession:
                     pass
             wb.SaveAs(str(dst_path))
         finally:
-            wb.Close(SaveChanges=False)
+            self._safe_close(wb)
 
 
 # ============================================================================
