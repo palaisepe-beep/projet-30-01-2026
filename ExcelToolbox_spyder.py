@@ -45,7 +45,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, simpledialog, ttk
 
 # openpyxl sert seulement à repérer les liaisons entre fichiers sans ouvrir
 # Excel. Si absent, l'appli démarre quand même et le dira clairement.
@@ -315,12 +315,54 @@ class ExcelSession:
         finally:
             self._safe_close(wb)
 
+    def unprotect_sheets(self, path, password):
+        """Retire la protection des feuilles (et de la structure du classeur)
+        en utilisant le mot de passe fourni par l'utilisateur, puis enregistre.
+
+        Ce n'est PAS du cassage de mot de passe : la fonction Unprotect d'Excel
+        ne reussit qu'avec le bon mot de passe, exactement comme dans Excel. Un
+        mauvais mot de passe fait echouer Excel, et on renvoie un message clair
+        avec les feuilles concernees."""
+        wb = self.app.Workbooks.Open(
+            str(path), UpdateLinks=XL_UPDATE_LINKS_NEVER, ReadOnly=False,
+            IgnoreReadOnlyRecommended=True, Notify=False,
+        )
+        failures = []
+        unprotected = 0
+        try:
+            for sheet in wb.Sheets:
+                try:
+                    if not sheet.ProtectContents:
+                        continue
+                    if password:
+                        sheet.Unprotect(Password=password)
+                    else:
+                        sheet.Unprotect()
+                    unprotected += 1
+                except Exception:
+                    failures.append(str(sheet.Name))
+            try:
+                if wb.ProtectStructure:
+                    wb.Unprotect(Password=password) if password else wb.Unprotect()
+            except Exception:
+                pass
+            wb.Save()
+        finally:
+            self._safe_close(wb)
+
+        if failures:
+            raise RuntimeError(
+                "mot de passe incorrect (ou feuille non deprotegeable) pour : "
+                + ", ".join(failures)
+            )
+        return unprotected
+
 
 # ============================================================================
 #  ORCHESTRATION : scan -> ordre -> backup -> action
 # ============================================================================
 
-def run_batch(paths, action, backup_root, on_event, make_backup=True):
+def run_batch(paths, action, backup_root, on_event, make_backup=True, password=None):
     """Traite tout le lot. on_event(dict) est appelé pour chaque étape afin
     que l'interface reste réactive."""
     files = discover_files(paths)
@@ -364,6 +406,8 @@ def run_batch(paths, action, backup_root, on_event, make_backup=True):
                         backup_file(file, backup_root, run_timestamp)
                     if action == "refresh_links":
                         excel.refresh_links(file)
+                    elif action == "unprotect":
+                        excel.unprotect_sheets(file, password)
                     else:
                         dst = file.with_name(f"{file.stem}_independant{file.suffix}")
                         excel.flatten_to_values(file, dst)
@@ -473,6 +517,14 @@ class App(tk.Tk):
             activebackground="#5a349a", activeforeground="white",
         )
         self.flatten_button.pack(side="left", padx=8)
+        self.unprotect_button = tk.Button(
+            action_row, text="Deproteger des feuilles",
+            command=self._start_unprotect,
+            bg="#2e7d32", fg="white", font=("Segoe UI", 10, "bold"),
+            relief="flat", padx=14, pady=10, cursor="hand2",
+            activebackground="#255f28", activeforeground="white",
+        )
+        self.unprotect_button.pack(side="left")
 
         # Option : sauvegarde de sécurité
         self.backup_var = tk.BooleanVar(value=True)
@@ -539,7 +591,20 @@ class App(tk.Tk):
 
     # ---------------- exécution ----------------
 
-    def _start(self, action):
+    def _start_unprotect(self):
+        if not self.selected_paths:
+            self._log("Selectionne d'abord des fichiers ou un dossier.")
+            return
+        password = simpledialog.askstring(
+            "Deproteger des feuilles",
+            "Mot de passe des feuilles a deproteger :",
+            show="*", parent=self,
+        )
+        if password is None:  # Annuler
+            return
+        self._start("unprotect", password=password)
+
+    def _start(self, action, password=None):
         if not self.selected_paths:
             self._log("Selectionne d'abord des fichiers ou un dossier.")
             return
@@ -553,7 +618,7 @@ class App(tk.Tk):
             target=run_batch,
             args=(list(self.selected_paths), action, backup_root,
                   self._event_queue.put),
-            kwargs={"make_backup": make_backup},
+            kwargs={"make_backup": make_backup, "password": password},
             daemon=True,
         )
         self._worker.start()
@@ -567,6 +632,7 @@ class App(tk.Tk):
         state = "disabled" if running else "normal"
         self.refresh_button.config(state=state)
         self.flatten_button.config(state=state)
+        self.unprotect_button.config(state=state)
 
     # ---------------- événements ----------------
 

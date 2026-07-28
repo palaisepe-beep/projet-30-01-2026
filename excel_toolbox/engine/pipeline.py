@@ -36,7 +36,7 @@ class Event:
     total: int = 0
 
 
-Action = Literal["refresh_links", "flatten_to_values"]
+Action = Literal["refresh_links", "flatten_to_values", "unprotect"]
 
 
 def plan_batch(paths: Iterable[Path]) -> tuple[list[Path], list[Path]]:
@@ -54,6 +54,7 @@ def run_batch(
     backup_root: Path,
     on_event: Callable[[Event], None],
     make_backup: bool = True,
+    password: str | None = None,
 ) -> None:
     ordered, cycles = plan_batch(paths)
 
@@ -101,6 +102,8 @@ def run_batch(
                     elif action == "flatten_to_values":
                         dst = file.with_name(f"{file.stem}_independant{file.suffix}")
                         excel.flatten_to_values(file, dst)
+                    elif action == "unprotect":
+                        excel.unprotect_sheets(file, password)
                     on_event(Event(kind="file_done", file=file, index=index, total=total))
                 except Exception as exc:
                     on_event(Event(

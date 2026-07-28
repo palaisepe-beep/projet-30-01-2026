@@ -39,6 +39,11 @@ class FakeExcelSession:
     def flatten_to_values(self, src: Path, dst: Path) -> None:
         self.calls.append(("flatten_to_values", src))
 
+    def unprotect_sheets(self, path: Path, password) -> int:
+        self.calls.append(("unprotect", path))
+        self.last_password = password
+        return 1
+
 
 @pytest.fixture
 def chain_dir(tmp_path: Path) -> Path:
@@ -134,6 +139,26 @@ def test_run_batch_make_backup_false_skips_backup(monkeypatch, chain_dir, tmp_pa
     assert {path.name for _, path in fake.calls} == {"A.xlsx", "B.xlsx", "C.xlsx"}
     # ...but no backup folder is created.
     assert not (tmp_path / ".backup").exists()
+
+
+def test_run_batch_unprotect_passes_password_to_every_file(monkeypatch, tmp_path):
+    a = tmp_path / "A.xlsx"
+    b = tmp_path / "B.xlsx"
+    _make_workbook(a)
+    _make_workbook(b)
+
+    fake = FakeExcelSession()
+    monkeypatch.setattr(pipeline, "ExcelSession", lambda *a, **k: fake)
+
+    events = []
+    pipeline.run_batch(
+        [tmp_path], "unprotect", tmp_path / ".backup", events.append,
+        password="secret",
+    )
+
+    assert {kind for kind, _ in fake.calls} == {"unprotect"}
+    assert {p.name for _, p in fake.calls} == {"A.xlsx", "B.xlsx"}
+    assert fake.last_password == "secret"
 
 
 def test_run_batch_flatten_processes_every_file(monkeypatch, tmp_path):

@@ -178,3 +178,50 @@ class ExcelSession:
             wb.SaveAs(str(dst_path))
         finally:
             self._safe_close(wb)
+
+    def unprotect_sheets(self, path: Path, password: str | None) -> int:
+        """Remove sheet (and workbook-structure) protection using the password
+        the user supplied, then save in place. Returns how many sheets were
+        unprotected.
+
+        This is not password cracking: Excel's own Unprotect only succeeds with
+        the correct password, exactly as it does in the Excel UI. A wrong
+        password makes Excel raise, and we re-raise a clear message naming the
+        sheets that could not be unprotected.
+        """
+        wb = self.app.Workbooks.Open(
+            str(path),
+            UpdateLinks=XL_UPDATE_LINKS_NEVER,
+            ReadOnly=False,
+            IgnoreReadOnlyRecommended=True,
+            Notify=False,
+        )
+        failures: list[str] = []
+        unprotected = 0
+        try:
+            for sheet in wb.Sheets:
+                try:
+                    if not sheet.ProtectContents:
+                        continue
+                    if password:
+                        sheet.Unprotect(Password=password)
+                    else:
+                        sheet.Unprotect()
+                    unprotected += 1
+                except Exception:
+                    failures.append(str(sheet.Name))
+            try:
+                if wb.ProtectStructure:
+                    wb.Unprotect(Password=password) if password else wb.Unprotect()
+            except Exception:
+                pass
+            wb.Save()
+        finally:
+            self._safe_close(wb)
+
+        if failures:
+            raise RuntimeError(
+                "mot de passe incorrect (ou feuille non déprotégeable) pour : "
+                + ", ".join(failures)
+            )
+        return unprotected

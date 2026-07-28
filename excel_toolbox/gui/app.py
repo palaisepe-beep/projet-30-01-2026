@@ -9,7 +9,7 @@ import os
 import queue
 import threading
 from pathlib import Path
-from tkinter import filedialog
+from tkinter import filedialog, simpledialog
 
 import customtkinter as ctk
 from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -115,6 +115,12 @@ class App(CTkDnD):
             command=lambda: self._start("flatten_to_values"),
         )
         self.flatten_button.pack(side="left")
+        self.unprotect_button = ctk.CTkButton(
+            action_row, text="Déprotéger des feuilles", height=40,
+            fg_color="#2e7d32", hover_color="#255f28",
+            command=self._start_unprotect,
+        )
+        self.unprotect_button.pack(side="left", padx=(8, 0))
 
         self.backup_var = ctk.BooleanVar(value=True)
         self.backup_check = ctk.CTkCheckBox(
@@ -174,7 +180,20 @@ class App(CTkDnD):
 
     # ---------------------------------------------------------------- run
 
-    def _start(self, action: str) -> None:
+    def _start_unprotect(self) -> None:
+        if not self.selected_paths:
+            self._log("Sélectionne d'abord des fichiers ou un dossier.")
+            return
+        password = simpledialog.askstring(
+            "Déprotéger des feuilles",
+            "Mot de passe des feuilles à déprotéger :",
+            show="*", parent=self,
+        )
+        if password is None:  # Annuler
+            return
+        self._start("unprotect", password=password)
+
+    def _start(self, action: str, password: str | None = None) -> None:
         if not self.selected_paths:
             self._log("Sélectionne d'abord des fichiers ou un dossier.")
             return
@@ -189,7 +208,7 @@ class App(CTkDnD):
         self._worker = threading.Thread(
             target=run_batch,
             args=(self.selected_paths, action, backup_root, self._event_queue.put),
-            kwargs={"make_backup": make_backup},
+            kwargs={"make_backup": make_backup, "password": password},
             daemon=True,
         )
         self._worker.start()
@@ -203,6 +222,7 @@ class App(CTkDnD):
         state = "disabled" if running else "normal"
         self.refresh_button.configure(state=state)
         self.flatten_button.configure(state=state)
+        self.unprotect_button.configure(state=state)
 
     # ------------------------------------------------------------- events
 
