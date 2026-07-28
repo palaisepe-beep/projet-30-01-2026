@@ -50,11 +50,11 @@ fichiers, on clique sur un bouton.
        dans les autres fichiers liés. L'outil détecte tout seul le bon
        ordre de mise à jour. Les fichiers d'origine sont modifiés.
 
-     > "Créer des versions indépendantes"
+     > "Créer fichier avec valeurs en dur"
        Crée, à côté de chaque fichier, une copie "NomDuFichier_
        independant.xlsx" où les formules et liaisons sont remplacées par
-       leurs valeurs. Ces copies n'ont plus besoin des autres fichiers.
-       Les fichiers d'origine ne sont PAS modifiés.
+       leurs valeurs en dur. Ces copies n'ont plus besoin des autres
+       fichiers. Les fichiers d'origine ne sont PAS modifiés.
 
      > "Déprotéger des feuilles"
        Retire la protection des feuilles. L'outil vous demande le mot de

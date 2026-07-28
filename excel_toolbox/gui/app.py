@@ -58,8 +58,8 @@ class App(CTkDnD):
 
         subheader = ctk.CTkLabel(
             self,
-            text="Actualise des classeurs Excel liés entre eux, ou crée des versions "
-                 "indépendantes sans liaisons externes.",
+            text="Actualise des classeurs Excel liés entre eux, ou crée des fichiers "
+                 "avec valeurs en dur (sans liaisons externes).",
             font=ctk.CTkFont(size=13),
             text_color=("gray30", "gray70"),
             justify="left",
@@ -110,7 +110,7 @@ class App(CTkDnD):
         )
         self.refresh_button.pack(side="left", padx=(0, 8))
         self.flatten_button = ctk.CTkButton(
-            action_row, text="Créer des versions indépendantes", height=40,
+            action_row, text="Créer fichier avec valeurs en dur", height=40,
             fg_color="#6f42c1", hover_color="#5a349a",
             command=lambda: self._start("flatten_to_values"),
         )

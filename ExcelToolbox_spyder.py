@@ -29,8 +29,8 @@
   - "Actualiser les liaisons" : met à jour les fichiers Excel sélectionnés en
     allant chercher les dernières valeurs dans les autres fichiers liés, dans
     le bon ordre (détecté automatiquement). Sauvegarde de sécurité auto avant.
-  - "Créer des versions indépendantes" : crée une copie NomFichier_independant
-    où les formules/liaisons sont remplacées par leurs valeurs (fichier
+  - "Créer fichier avec valeurs en dur" : crée une copie NomFichier_independant
+    où les formules/liaisons sont remplacées par leurs valeurs en dur (fichier
     autonome, sans dépendance). L'original n'est pas modifié.
 
   Windows uniquement + Excel doit être installé (l'outil pilote Excel).
@@ -481,7 +481,7 @@ class App(tk.Tk):
         ttk.Label(
             self,
             text="Actualise des classeurs Excel liés entre eux, ou crée des "
-                 "versions indépendantes sans liaisons.",
+                 "fichiers avec valeurs en dur (sans liaisons).",
             style="Sub.TLabel", wraplength=660, justify="left",
         ).pack(anchor="w", pady=(0, 12), **pad)
 
@@ -520,7 +520,7 @@ class App(tk.Tk):
         )
         self.refresh_button.pack(side="left")
         self.flatten_button = tk.Button(
-            action_row, text="Creer des versions independantes",
+            action_row, text="Creer fichier avec valeurs en dur",
             command=lambda: self._start("flatten_to_values"),
             bg=self.ACCENT2, fg="white", font=("Segoe UI", 10, "bold"),
             relief="flat", padx=14, pady=10, cursor="hand2",
