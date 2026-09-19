@@ -1,0 +1,14 @@
+# Déploiement Netlify — application 100 % statique.
+[build]
+  base = "president2027"
+  command = "npm install && npm run build"
+  publish = "president2027/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# SPA : tout renvoyer vers index.html (une seule page).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
