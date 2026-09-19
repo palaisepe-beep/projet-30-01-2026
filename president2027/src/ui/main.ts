@@ -1,6 +1,7 @@
 import {
   createInitialState, endTurn, usePower, getEvent, resolveEventChoice, availableChoices,
   measureAvailability, applyMeasure, majoriteSoutien, risqueCensure, ratingLabel,
+  projectedDeficit, measureDeficitDelta, measureBudgetMdEUR, turnBudgetTally,
   MEASURES, POWERS, PROFILES, PARTIS, CONSEILLERS, ACHIEVEMENTS, achievementById,
   GROUPS, FAMILLES, MAJORITE_ABSOLUE,
   type GameState, type ProfileId, type Difficulty, type Mode, type Domaine, type Measure,
@@ -24,14 +25,22 @@ type UIState = {
   filter: Domaine | 'all' | 'pouvoirs' | 'favoris';
   search: string;
   pedago: boolean;
+  open: Set<string>;         // panneaux/mesures dépliés (persiste au re-render)
+  tutorial: boolean;         // overlay tutoriel affiché
   newOpts: { seed: string; profile: ProfileId; difficulty: Difficulty; mode: Mode };
 };
 
 let game: GameState | null = null;
 const ui: UIState = {
-  screen: 'home', filter: 'all', search: '', pedago: false,
+  screen: 'home', filter: 'budget', search: '', pedago: false,
+  open: new Set<string>(['dash']),
+  tutorial: false,
   newOpts: { seed: randomSeed(), profile: 'reformateur', difficulty: 'normal', mode: 'complet' },
 };
+
+const TUTORIAL_KEY = 'p2027_tuto';
+function tutorialSeen(): boolean { try { return localStorage.getItem(TUTORIAL_KEY) === '1'; } catch { return false; } }
+function markTutorialSeen(): void { try { localStorage.setItem(TUTORIAL_KEY, '1'); } catch { /* */ } }
 
 const app = document.getElementById('app')!;
 
@@ -208,7 +217,7 @@ function aboutBlock(): string {
 // --------------------------------------------------------------------------
 function renderGame(): string {
   const s = game!;
-  const m = s.macro, e = s.economy, p = s.politics;
+  const p = s.politics;
   const eventsPending = s.currentEvents.length > 0;
 
   return `<div class="tricolore"></div>
@@ -218,77 +227,137 @@ function renderGame(): string {
     <span class="phase-pill">${phaseLabel(s)}</span>
     <span class="topbar-spacer"></span>
     <span class="resources">
-      <span class="res" title="Capital politique">💪 <b>${Math.round(p.capital)}</b></span>
-      <span class="res" title="Points d'action ce tour">⏱️ <b>${p.actionPoints}/${p.maxActionPoints}</b></span>
+      <span class="res" title="Capital politique : sert à décider">💪 <b>${Math.round(p.capital)}</b></span>
+      <span class="res" title="Points d'action restants ce tour">⏱️ <b>${p.actionPoints}/${p.maxActionPoints}</b></span>
       <span class="res" title="Popularité">📊 <b>${Math.round(p.popularity)}%</b></span>
     </span>
+    <button class="btn ghost small" data-act="help" aria-label="Aide">❔</button>
     <button class="btn ghost small" data-act="toggle-theme" aria-label="Changer de thème">🌓</button>
-    <button class="btn ghost small" data-act="menu">☰ Menu</button>
+    <button class="btn ghost small" data-act="menu">☰</button>
   </div></header>
 
   <div class="wrap"><div class="layout">
     <main>
-      ${eventsPending ? renderEvents(s) : ''}
+      ${renderObjective(s)}
+      ${eventsPending ? `<div class="events-flag">⚠️ Décision(s) requise(s) — traitez l'événement avant de terminer le trimestre.</div>${renderEvents(s)}` : ''}
       ${ui.pedago && s.explain.length ? renderPedago(s) : ''}
-      <div class="card">
-        <h2>📰 Briefing — ${esc(s.meta.dateLabel)}</h2>
-        ${s.depeches.length ? s.depeches.map((d) => `<div class="depeche">${esc(d)}</div>`).join('')
-          : '<p class="muted">Trimestre calme. À vous d\'agir.</p>'}
-      </div>
       ${renderActions(s)}
     </main>
     <aside>
       ${renderDashboard(s)}
-      ${renderCharts(s)}
-      ${renderAssembly(s)}
-      ${renderSondage(s)}
-      ${renderAdvisors(s)}
-      ${renderJournal(s)}
+      ${panel('detail', '📊 Plus d\'indicateurs', renderDetail(s))}
+      ${panel('assemblee', `🏛️ Assemblée &amp; censure${risqueCensure(s) > 55 && !p.cohabitation ? ' <span class="badge-inline">risque</span>' : ''}`, renderAssembly(s))}
+      ${panel('sondage', '📊 Sondage par catégorie', renderSondage(s))}
+      ${panel('charts', '📉 Historique', renderCharts(s))}
+      ${panel('conseillers', '🗣️ Conseillers', renderAdvisors(s))}
+      ${panel('journal', '📓 Journal de mandat', renderJournal(s))}
     </aside>
   </div></div>
 
   <div class="actionbar"><div class="wrap">
-    <label class="toggle"><input type="checkbox" data-act="toggle-pedago" ${ui.pedago ? 'checked' : ''}/> Mode pédagogique</label>
-    <span class="info">${eventsPending ? '⚠️ Traitez le(s) événement(s) avant de terminer.' : `Capital ${Math.round(p.capital)} · Points d'action ${p.actionPoints}`}</span>
+    <label class="toggle"><input type="checkbox" data-act="toggle-pedago" ${ui.pedago ? 'checked' : ''}/> <span>Expliquer</span></label>
+    <span class="info">${eventsPending ? '⚠️ Traitez l\'événement' : `💪 ${Math.round(p.capital)} · ⏱️ ${p.actionPoints}`}</span>
     <span class="topbar-spacer"></span>
     <button class="btn primary" data-act="end-turn" ${eventsPending ? 'disabled' : ''}>Terminer ${s.meta.phase === 'CAMPAGNE' ? 'le mois' : 'le trimestre'} ▶</button>
-  </div></div>`;
+  </div></div>
+  ${ui.tutorial ? renderTutorial() : ''}`;
 }
 
 function phaseLabel(s: GameState): string {
-  if (s.meta.phase === 'CAMPAGNE') return 'Campagne';
+  if (s.meta.phase === 'CAMPAGNE') return 'Campagne 2027';
   if (s.meta.phase === 'ELECTION') return 'Élection';
   return s.politics.cohabitation ? `Mandat ${s.meta.mandat} · Cohabitation` : `Mandat ${s.meta.mandat}`;
+}
+
+/** Panneau repliable (l'état ouvert/fermé persiste dans ui.open). */
+function panel(key: string, titleHtml: string, bodyHtml: string): string {
+  const open = ui.open.has(key);
+  return `<div class="card panel">
+    <button class="panel-head" data-act="toggle-open" data-key="${key}" aria-expanded="${open}">
+      <span>${titleHtml}</span><span class="chev">${open ? '▾' : '▸'}</span>
+    </button>
+    ${open ? `<div class="panel-body">${bodyHtml}</div>` : ''}
+  </div>`;
+}
+
+// --------------------------------------------------------------------------
+// Bandeau d'objectif : le « cap », avec le déficit projeté qui bouge en direct.
+// --------------------------------------------------------------------------
+function renderObjective(s: GameState): string {
+  const p = s.politics;
+  const campagne = s.meta.phase === 'CAMPAGNE' || s.meta.phase === 'ELECTION';
+  if (campagne) {
+    const pop = p.popularity;
+    const prog = Math.max(0, Math.min(100, ((pop - 20) / 30) * 100));
+    const col = pop >= 45 ? 'var(--ok)' : pop >= 35 ? 'var(--warn)' : 'var(--danger)';
+    return `<div class="card objective">
+      <div class="obj-goal">🗳️ Cap : <b>gagner la présidentielle de 2027</b></div>
+      <div class="obj-metric">
+        <div class="metric-big"><span class="metric-proj" style="color:${col}">${Math.round(pop)}%</span>
+          <span class="metric-cap">de popularité — faites campagne et tenez la barre au-dessus de la moyenne</span></div>
+        <div class="obj-bar"><span style="width:${prog}%;background:${col}"></span></div>
+        <div class="obj-tally muted">Chaque meeting et bonne décision compte. Les promesses tenues pèsent au second tour.</div>
+      </div></div>`;
+  }
+  const cur = s.macro.deficitPct;
+  const proj = projectedDeficit(s);
+  const tally = turnBudgetTally(s);
+  // Barre : 8 % (vide) -> 3 % (pleine).
+  const prog = Math.max(0, Math.min(100, ((8 - proj) / (8 - 3)) * 100));
+  const projCol = proj < 3 ? 'var(--ok)' : proj < 5 ? 'var(--warn)' : 'var(--danger)';
+  const tallyTxt = Math.abs(tally) < 0.5 ? 'aucune décision budgétaire ce trimestre'
+    : `${tally > 0 ? '+' : ''}${tally.toFixed(0)} Md€ de décisions ce trimestre`;
+  return `<div class="card objective">
+    <div class="obj-goal">🎯 Cap : <b>ramener le déficit sous 3 % du PIB</b> ${s.meta.mandat >= 2 ? '· 2d mandat' : 'avant 2030'}</div>
+    <div class="obj-metric">
+      <div class="metric-big">
+        <span class="metric-now">${fmt(cur)}%</span>
+        <span class="arrow">→</span>
+        <span class="metric-proj" style="color:${projCol}" title="Déficit projeté au prochain trimestre, mis à jour à chaque décision">${fmt(proj)}%</span>
+        <span class="metric-cap">projeté · cible <b>3 %</b></span>
+      </div>
+      <div class="obj-bar"><span style="width:${prog}%;background:${projCol}"></span><i class="obj-target">3%</i></div>
+      <div class="obj-tally"><b>${tallyTxt}</b> · Dette ${fmt(s.macro.debtPct, 0)} % · Popularité ${Math.round(p.popularity)} %</div>
+    </div></div>`;
 }
 
 function renderDashboard(s: GameState): string {
   const m = s.macro, e = s.economy, p = s.politics;
   const g = (lbl: string, val: string, bar?: string) =>
     `<div class="gauge"><div class="lbl">${lbl}</div><div class="val">${val}</div>${bar ?? ''}</div>`;
-  return `<div class="card"><h2>📈 Tableau de bord</h2><div class="gauges">
+  return `<div class="card"><h2>📈 L'essentiel</h2><div class="gauges">
     ${g('Déficit', `${fmt(m.deficitPct)}<small>% PIB</small>`, gaugeBar(100 - (m.deficitPct / 14) * 100))}
     ${g('Dette', `${fmt(m.debtPct, 0)}<small>% PIB</small>`, gaugeBar(100 - (m.debtPct - 90) * 1.6))}
-    ${g('Charge dette', `${fmt(m.interestCharge, 0)}<small>Md€/an</small>`)}
     ${g('Croissance', `${fmt(e.growth)}<small>%</small>`, gaugeBar((e.growth + 2) * 20))}
     ${g('Chômage', `${fmt(e.unemployment)}<small>%</small>`, gaugeBar(100 - (e.unemployment - 3) * 8))}
+    ${g('Popularité', `${fmt(p.popularity, 0)}`, gaugeBar(p.popularity))}
+    ${g('Tension', `${fmt(p.socialTension, 0)}`, gaugeBar(p.socialTension, true))}
+  </div></div>`;
+}
+
+function renderDetail(s: GameState): string {
+  const m = s.macro, e = s.economy;
+  const g = (lbl: string, val: string, bar?: string) =>
+    `<div class="gauge"><div class="lbl">${lbl}</div><div class="val">${val}</div>${bar ?? ''}</div>`;
+  return `<div class="gauges">
+    ${g('Charge dette', `${fmt(m.interestCharge, 0)}<small>Md€/an</small>`)}
     ${g('Inflation', `${fmt(e.inflation)}<small>%</small>`, gaugeBar(100 - Math.abs(e.inflation - 2) * 20))}
     ${g('Spread', `${fmt(m.spread, 0)}<small>bps</small>`, gaugeBar(100 - m.spread / 4))}
     ${g('Pouvoir d\'achat', `${fmt(e.purchasingPower, 0)}`, gaugeBar(e.purchasingPower))}
-    ${g('Tension sociale', `${fmt(p.socialTension, 0)}`, gaugeBar(p.socialTension, true))}
-    ${g('Notation (S&P)', ratingLabel(m.ratings.sp))}
+    ${g('Notation S&P', ratingLabel(m.ratings.sp))}
+    ${g('Réputation', `${fmt(s.intl.reputation, 0)}`, gaugeBar(s.intl.reputation))}
   </div>
-  <p class="small muted" style="margin-top:8px">Réputation internationale ${fmt(s.intl.reputation, 0)} · Poids en Europe ${fmt(s.intl.europeWeight, 0)} · Armée ${fmt(s.intl.armyStrength, 0)} · Munitions ${fmt(s.intl.ammoStock, 0)}</p>
-  </div>`;
+  <p class="small muted" style="margin-top:8px">Poids en Europe ${fmt(s.intl.europeWeight, 0)} · Armée ${fmt(s.intl.armyStrength, 0)} · Munitions ${fmt(s.intl.ammoStock, 0)} · Confiance institutions ${fmt(s.politics.institutionalTrust, 0)}</p>`;
 }
 
 function renderCharts(s: GameState): string {
   const h = s.history;
-  return `<div class="card"><h2>📉 Historique</h2><div class="chart-grid">
+  return `<div class="chart-grid">
     <div class="chart-box"><div class="t">Déficit (% PIB)</div>${lineChart(h, (x) => x.deficitPct, { color: '#c0261f', unit: '%', title: 'Déficit', invert: true })}</div>
     <div class="chart-box"><div class="t">Dette (% PIB)</div>${lineChart(h, (x) => x.debtPct, { color: '#8e44ad', unit: '%', title: 'Dette', invert: true })}</div>
     <div class="chart-box"><div class="t">Popularité</div>${lineChart(h, (x) => x.popularity, { color: '#2e5cff', unit: '', title: 'Popularité' })}</div>
     <div class="chart-box"><div class="t">Croissance (%)</div>${lineChart(h, (x) => x.growth, { color: '#1f8a4c', unit: '%', title: 'Croissance' })}</div>
-  </div></div>`;
+  </div>`;
 }
 
 function renderAssembly(s: GameState): string {
@@ -297,40 +366,53 @@ function renderAssembly(s: GameState): string {
   const rows = FAMILLES.map((f) => {
     const seats = s.politics.assembly.seats[f];
     const sup = s.politics.assembly.support[f];
-    return `<div class="advisor" style="border:none;padding:3px 0">
-      <div style="flex:1"><span class="fam-tag" style="background:${FAMILLE_COLOR[f]}">${FAMILLE_LABEL[f]}</span>
-      <span class="small muted"> ${seats} sièges</span></div>
-      <div class="small">soutien ${Math.round(sup)}%</div></div>`;
+    return `<div class="asm-row">
+      <span class="fam-tag" style="background:${FAMILLE_COLOR[f]}">${FAMILLE_LABEL[f]}</span>
+      <span class="small muted">${seats} sièges</span>
+      <span class="small" style="margin-left:auto">soutien ${Math.round(sup)}%</span></div>`;
   }).join('');
-  return `<div class="card"><h2>🏛️ Assemblée</h2>
-    <p class="small">Soutien présidentiel : <b>${maj}</b> / ${MAJORITE_ABSOLUE} sièges requis.
+  return `<p class="small">Soutien présidentiel : <b>${maj}</b> / ${MAJORITE_ABSOLUE} sièges requis.
     Risque de censure : <b style="color:${risk > 55 ? 'var(--danger)' : risk > 30 ? 'var(--warn)' : 'var(--ok)'}">${Math.round(risk)}%</b></p>
-    ${rows}</div>`;
+    ${rows}`;
 }
 
 function renderSondage(s: GameState): string {
-  const rows = GROUPS.map((gr) => {
+  return GROUPS.map((gr) => {
     const v = s.politics.groups[gr];
     return `<div style="display:flex;align-items:center;gap:8px;margin:3px 0">
       <div style="width:120px;font-size:.8rem">${GROUP_LABEL[gr]}</div>
       <div class="bar" style="flex:1"><span style="width:${v}%;background:${barColor(v)}"></span></div>
       <div class="small" style="width:34px;text-align:right">${Math.round(v)}%</div></div>`;
   }).join('');
-  return `<div class="card"><h2>📊 Sondage par catégorie</h2>${rows}</div>`;
 }
 
 function renderAdvisors(s: GameState): string {
   const msgs = advisorMessages(s);
-  return `<div class="card"><h2>🗣️ Conseillers</h2>
-    <p class="small muted">Leurs avis divergent — et ne sont pas toujours justes.</p>
+  return `<p class="small muted">Leurs avis divergent — et ne sont pas toujours justes.</p>
     ${msgs.map((mm) => `<div class="advisor"><div class="emoji">${mm.emoji}</div>
-      <div><div class="who">${esc(mm.who)}</div><div class="say">« ${esc(mm.say)} »</div></div></div>`).join('')}</div>`;
+      <div><div class="who">${esc(mm.who)}</div><div class="say">« ${esc(mm.say)} »</div></div></div>`).join('')}`;
 }
 
 function renderJournal(s: GameState): string {
   const items = s.journal.slice(-40).reverse().map((j) =>
     `<li><span class="jt">${esc(j.label)}</span>${esc(j.texte)}</li>`).join('');
-  return `<div class="card"><h2>📓 Journal de mandat</h2><ul class="journal-list">${items}</ul></div>`;
+  return `<ul class="journal-list">${items}</ul>`;
+}
+
+function renderTutorial(): string {
+  return `<div class="overlay" role="dialog" aria-modal="true" aria-label="Comment jouer">
+    <div class="tuto card">
+      <h2>Bienvenue à l'Élysée 🇫🇷</h2>
+      <p class="muted small">Vous êtes Président. Voici la boucle du jeu, en 4 points :</p>
+      <ol class="tuto-steps">
+        <li><b>🎯 Votre cap</b> (en haut) : l'objectif et le <b>déficit projeté</b>. Ce chiffre bouge <b>dès que vous décidez</b> une mesure — visez sous 3 %.</li>
+        <li><b>🎯 Agir</b> : dans « Leviers d'action », chaque mesure montre son <b>impact sur le déficit</b> (<span style="color:var(--ok)">vert = réduit</span>, <span style="color:var(--danger)">rouge = creuse</span>) et son coût (💪 capital, ⏱️ temps). Cliquez <b>Décider</b>. Le petit <b>⌄</b> déplie l'explication.</li>
+        <li><b>⚠️ Événements</b> : quand un encadré orange apparaît, choisissez une option avant de continuer.</li>
+        <li><b>▶ Terminer le trimestre</b> (bouton bleu, en bas) applique tout et fait avancer le temps.</li>
+      </ol>
+      <p class="small">⚖️ Attention à l'équilibre : sans majorité gare à la <b>censure</b>, une austérité trop brutale vous rend <b>impopulaire</b>… et l'<b>élection de 2027</b> arrive vite. Tout se joue sur les arbitrages.</p>
+      <div class="row"><button class="btn primary" data-act="close-tutorial">C'est parti !</button></div>
+    </div></div>`;
 }
 
 function renderPedago(s: GameState): string {
@@ -370,27 +452,20 @@ const DOMAINES_ORDRE: Domaine[] = ['budget', 'fiscalite', 'social', 'dette', 'ec
   'defense', 'communication', 'institutions', 'interieur'];
 
 function renderActions(s: GameState): string {
-  const tabs = [`<button class="tab ${ui.filter === 'all' ? 'active' : ''}" data-filter="all">Toutes</button>`,
-    `<button class="tab ${ui.filter === 'pouvoirs' ? 'active' : ''}" data-filter="pouvoirs">⚡ Pouvoirs</button>`];
   const usedDomains = new Set(MEASURES.map((m) => m.domaine));
-  for (const d of DOMAINES_ORDRE) {
-    if (!usedDomains.has(d)) continue;
-    tabs.push(`<button class="tab ${ui.filter === d ? 'active' : ''}" data-filter="${d}">${DOMAINE_LABEL[d]}</button>`);
-  }
+  const domTabs = DOMAINES_ORDRE.filter((d) => usedDomains.has(d))
+    .map((d) => `<button class="tab ${ui.filter === d ? 'active' : ''}" data-filter="${d}">${DOMAINE_LABEL[d]}</button>`);
+  const tabs = [
+    `<button class="tab ${ui.filter === 'all' ? 'active' : ''}" data-filter="all">⭐ Toutes</button>`,
+    ...domTabs,
+    `<button class="tab ${ui.filter === 'pouvoirs' ? 'active' : ''}" data-filter="pouvoirs">⚡ Pouvoirs</button>`,
+  ];
 
   let body = '';
+  let count = 0;
   if (ui.filter === 'pouvoirs') {
-    body = POWERS.map((pw) => {
-      const enough = s.politics.capital >= pw.coutCapital && s.politics.actionPoints >= pw.coutActionPoints;
-      return `<div class="measure ${enough ? '' : 'locked'}">
-        <div class="measure-head"><div class="measure-title">${pw.emoji} ${esc(pw.titre)}</div>
-        <span class="chip cost">${pw.coutCapital} 💪 · ${pw.coutActionPoints} ⏱️</span></div>
-        <div class="desc">${esc(pw.description)}</div>
-        <div class="meta">${pw.risque ? `<span class="chip" style="color:var(--danger)">⚠️ ${esc(pw.risque)}</span>` : ''}
-        <span class="chip src">ⓘ ${esc(pw.source_ou_ordre_de_grandeur)}</span>
-        <button class="btn small primary" data-act="use-power" data-id="${pw.id}" ${enough ? '' : 'disabled'}>Utiliser</button></div>
-      </div>`;
-    }).join('');
+    body = POWERS.map((pw) => renderPower(s, pw)).join('');
+    count = POWERS.length;
   } else {
     const q = ui.search.trim().toLowerCase();
     const list = MEASURES.filter((mm) => {
@@ -398,38 +473,71 @@ function renderActions(s: GameState): string {
       if (q && !(`${mm.titre} ${mm.description}`.toLowerCase().includes(q))) return false;
       return true;
     });
+    // Les mesures qui réduisent le déficit d'abord (comme un budget à bâtir).
+    list.sort((a, b) => measureDeficitDelta(s, a) - measureDeficitDelta(s, b));
+    count = list.length;
     body = list.length ? list.map((mm) => renderMeasure(s, mm)).join('')
       : '<p class="muted">Aucune mesure ne correspond.</p>';
   }
 
-  return `<div class="card"><h2>🎯 Leviers d'action</h2>
+  return `<div class="card"><h2>🎛️ Leviers d'action <span class="muted small">(${count})</span></h2>
+    <p class="hint small">💡 Choisissez des mesures : celles à impact <span style="color:var(--ok)">vert</span> réduisent le déficit, en <span style="color:var(--danger)">rouge</span> le creusent. Le « Cap » en haut se met à jour.</p>
     <div class="tabs">${tabs.join('')}</div>
     ${ui.filter !== 'pouvoirs' ? `<input class="search" type="search" placeholder="Rechercher une mesure…" value="${esc(ui.search)}" data-act="search" aria-label="Rechercher une mesure" />` : ''}
     ${body}
   </div>`;
 }
 
+function renderPower(s: GameState, pw: typeof POWERS[number]): string {
+  const enough = s.politics.capital >= pw.coutCapital && s.politics.actionPoints >= pw.coutActionPoints;
+  const open = ui.open.has('p:' + pw.id);
+  return `<div class="measure ${enough ? '' : 'locked'}">
+    <div class="m-row">
+      <button class="m-toggle" data-act="toggle-open" data-key="p:${pw.id}" aria-label="Détails" aria-expanded="${open}">${open ? '▾' : '⌄'}</button>
+      <div class="m-main"><div class="m-title">${pw.emoji} ${esc(pw.titre)}</div>
+        <div class="m-chips">${pw.risque ? `<span class="chip warn">⚠️ ${esc(pw.risque)}</span>` : ''}</div></div>
+      <div class="m-act"><span class="chip cost">${pw.coutCapital}💪 ${pw.coutActionPoints}⏱️</span>
+        <button class="btn small primary" data-act="use-power" data-id="${pw.id}" ${enough ? '' : 'disabled'}>Utiliser</button></div>
+    </div>
+    ${open ? `<div class="m-body"><p class="desc">${esc(pw.description)}</p><p class="small src muted">ⓘ ${esc(pw.source_ou_ordre_de_grandeur)}</p></div>` : ''}
+  </div>`;
+}
+
 function renderMeasure(s: GameState, mm: Measure): string {
   const av = measureAvailability(s, mm);
-  const cohab = s.politics.cohabitation;
-  const budget = mm.effets?.budgetMdEUR ?? 0;
+  const open = ui.open.has('m:' + mm.id);
+  const delta = measureDeficitDelta(s, mm);
   const budgetLong = mm.effetsDiffered?.budgetMdEUR ?? 0;
-  const budgetChip = budget || budgetLong
-    ? `<span class="chip" title="Impact sur le solde public">${budget >= 0 ? '💰' : '💸'} ${budget ? `${budget > 0 ? '+' : ''}${budget} Md€` : ''}${budgetLong ? ` (+${budgetLong} Md€ différé)` : ''}</span>` : '';
-  const delai = mm.delaiTours ? `<span class="chip">⏳ effet dans ${mm.delaiTours} tr.</span>` : '';
+
+  // Puce d'impact sur le déficit (le cœur du feedback « budget »).
+  let deltaChip = '';
+  if (Math.abs(delta) >= 0.01) {
+    const good = delta < 0;
+    deltaChip = `<span class="chip impact ${good ? 'good' : 'bad'}" title="Effet sur le déficit projeté">${good ? '▼' : '▲'} ${delta > 0 ? '+' : ''}${delta.toFixed(2)} pt déficit</span>`;
+  } else if (budgetLong) {
+    deltaChip = `<span class="chip">⏳ +${budgetLong} Md€ à terme</span>`;
+  }
+  const delai = mm.delaiTours ? `<span class="chip">⏳ ${mm.delaiTours} tr.</span>` : '';
   const oneshot = mm.oneShot ? '<span class="chip">unique</span>' : '';
-  const risques = (mm.risques ?? []).map((r) => `<span class="chip" style="color:var(--warn)">⚠️ ${esc(r)}</span>`).join('');
+  const risques = (mm.risques ?? []).map((r) => `<span class="chip warn">⚠️ ${esc(r)}</span>`).join('');
+
   return `<div class="measure ${av.ok ? '' : 'locked'}">
-    <div class="measure-head">
-      <div class="measure-title">${esc(mm.titre)} <span class="fam-tag" style="background:${FAMILLE_COLOR[mm.famille]}">${FAMILLE_LABEL[mm.famille]}</span></div>
-      <span class="chip cost">${mm.cout.capital} 💪 · ${mm.cout.actionPoints} ⏱️</span>
+    <div class="m-row">
+      <button class="m-toggle" data-act="toggle-open" data-key="m:${mm.id}" aria-label="Détails" aria-expanded="${open}">${open ? '▾' : '⌄'}</button>
+      <div class="m-main">
+        <div class="m-title">${esc(mm.titre)} <span class="fam-tag" style="background:${FAMILLE_COLOR[mm.famille]}">${FAMILLE_LABEL[mm.famille]}</span></div>
+        <div class="m-chips">${deltaChip}${delai}${oneshot}</div>
+      </div>
+      <div class="m-act">
+        <span class="chip cost">${mm.cout.capital}💪 ${mm.cout.actionPoints}⏱️</span>
+        <button class="btn small primary" data-act="apply-measure" data-id="${mm.id}" ${av.ok ? '' : 'disabled'} title="${av.ok ? 'Appliquer cette mesure' : esc(av.raison ?? '')}">${av.ok ? 'Décider' : '🔒'}</button>
+      </div>
     </div>
-    <div class="desc">${esc(mm.description)}</div>
-    <div class="meta">${budgetChip}${delai}${oneshot}${risques}
-      <span class="chip src">ⓘ ${esc(mm.source_ou_ordre_de_grandeur)}</span>
-      <button class="btn small primary" data-act="apply-measure" data-id="${mm.id}" ${av.ok ? '' : 'disabled'}>${av.ok ? 'Décider' : esc(av.raison ?? 'Indisponible')}</button>
-    </div>
-    ${cohab && !av.ok ? '' : ''}
+    ${open ? `<div class="m-body">
+      <p class="desc">${esc(mm.description)}</p>
+      <div class="meta">${risques}<span class="chip src">ⓘ ${esc(mm.source_ou_ordre_de_grandeur)}</span></div>
+      ${!av.ok ? `<p class="small" style="color:var(--warn)">🔒 ${esc(av.raison ?? '')}</p>` : ''}
+    </div>` : ''}
   </div>`;
 }
 
@@ -536,6 +644,9 @@ function startGame(): void {
   if (seedEl && seedEl.value.trim()) ui.newOpts.seed = seedEl.value.trim();
   game = createInitialState({ ...ui.newOpts });
   ui.screen = 'game';
+  ui.filter = 'budget';
+  ui.open = new Set(['dash']);
+  ui.tutorial = !tutorialSeen();
   save();
   render();
 }
@@ -591,6 +702,9 @@ document.addEventListener('click', (ev) => {
 
   const act = t.dataset.act;
   switch (act) {
+    case 'toggle-open': { const k = t.dataset.key!; if (ui.open.has(k)) ui.open.delete(k); else ui.open.add(k); return render(); }
+    case 'close-tutorial': { ui.tutorial = false; markTutorialSeen(); return render(); }
+    case 'help': { ui.tutorial = true; return render(); }
     case 'start': return startGame();
     case 'resume': { const sv = loadSave(); if (sv) { game = sv; ui.screen = sv.meta.phase === 'FIN' ? 'end' : 'game'; render(); } return; }
     case 'reroll-seed': { ui.newOpts.seed = randomSeed(); return render(); }
